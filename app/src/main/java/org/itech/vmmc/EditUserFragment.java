@@ -40,6 +40,8 @@ public class EditUserFragment extends Fragment implements AdapterView.OnItemSele
     private static final String ARG_EDIT_USER_PARAM = "EXTRA_EDIT_USER_PARAM";
     private static final String ARG_EDIT_USER_RECORD_PARAM = "EXTRA_EDIT_USER_RECORD_PARAM";
 
+    private static String FILLER_PASSWORD = "?????????";
+
     View _view;
 
     // private String mEditUserParam;
@@ -158,7 +160,9 @@ public class EditUserFragment extends Fragment implements AdapterView.OnItemSele
             _phone = (TextView) _view.findViewById(R.id.phone);
             _phone.setText(_user.get_phone());
             _password = (TextView) _view.findViewById(R.id.password);
-            _password.setText(_user.get_password());
+            if (_user.get_password() != null) {
+                _password.setText(FILLER_PASSWORD);
+            }
             _firstName = (TextView) _view.findViewById(R.id.first_name);
             _firstName.setText(_user.get_first_name());
             _lastName = (TextView) _view.findViewById(R.id.last_name);
@@ -202,6 +206,12 @@ public class EditUserFragment extends Fragment implements AdapterView.OnItemSele
                int iRegionId = _user.get_region_id();
                int iIsBlocked = _user.get_is_blocked();
 
+                boolean passwordChanged = !sPassword.equals(FILLER_PASSWORD);
+                if (passwordChanged) {
+                    PasswordUtil passwordUtil = new PasswordUtil();
+                    sPassword = passwordUtil.secureHashPassword(sPassword);
+                }
+
               Spinner utSpinner = (Spinner) _view.findViewById(R.id.user_type);
 //              String sUserType  = utSpinner.getSelectedItem().toString();
               UserType _userType = dbHelp.getUserType( utSpinner.getSelectedItem().toString());
@@ -222,7 +232,13 @@ public class EditUserFragment extends Fragment implements AdapterView.OnItemSele
                     if (lookupUser != null) {
                         lookupUser.set_username(sUsername);
                         lookupUser.set_phone(sPhone);
-                        lookupUser.set_password(sPassword);
+                        if (passwordChanged) {
+                            lookupUser.set_password(sPassword);
+                            if (lookupUser.get_username().equals(MainActivity._username)) {
+                                MainActivity._password = sPassword;
+                                MainActivity.USER_OBJ = new User(dbHelp, MainActivity._username + ":" + MainActivity._password);
+                            }
+                        }
                         lookupUser.set_user_type_id(_userType.get_id());
                         lookupUser.set_location_id(_location.get_id());
                         lookupUser.set_first_name(sFirstName);

@@ -80,6 +80,9 @@ public class User {
         this._password = parts[1];
         User _user = new User();
         _user = dbHelp.getUser(this._username, this._password, "%");
+        if (_user == null) {
+            return;
+        }
         this._timestamp = _user.get_timestamp();
         this._email = _user.get_email();
         this._first_name = _user._first_name;

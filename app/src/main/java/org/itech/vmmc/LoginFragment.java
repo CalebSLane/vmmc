@@ -206,6 +206,7 @@ public class LoginFragment extends Fragment {
      * errors are presented and no actual login attempt is made.
      */
     private void attemptLogin() {
+        Toast.makeText(getView().getContext(), getString(R.string.logging_in), Toast.LENGTH_SHORT).show();
 
         Log.d(LOG, "attemptLogin0");
 
@@ -265,77 +266,10 @@ public class LoginFragment extends Fragment {
             // Show a progress spinner, and kick off a background task to
             // perform the user login attempt.
             // showProgress(true);
-            // mAuthTask = new UserLoginTask(email, password);
-            // mAuthTask.execute((Void) null);
+             mAuthTask = new UserLoginTask(email, password);
+             mAuthTask.execute();
 
-            Log.d(LOG, "check credentials0");
-            DBHelper dbHelp = new DBHelper(getActivity());
-            ArrayList<String> _CREDENTIALS = new ArrayList<String>();
-            _CREDENTIALS = dbHelp.getCredentials();
-            if(_CREDENTIALS.isEmpty()) {
-                _CREDENTIALS.add("sync@:password");
-            }
-            for (String credential : _CREDENTIALS) {
-                String[] pieces = credential.split(":");
-                if (pieces[0].equals(email) && pieces[1].equals(password)) {
-                    // Log.d(TAG, "good");
-                    MainActivity.LOGGED_IN = true;
-                    MainActivity._username = email; // referred to as username in db, email in pop-up
-                    MainActivity._password = password;
 
-                    if(!MainActivity._username.equals("sync@")) {
-                        MainActivity.USER_OBJ = new User(dbHelp, MainActivity._username + ":" + MainActivity._password);
-                    }
-
-                    Fragment fragment = getFragmentManager().findFragmentByTag(ActionFragment.TAG);
-                    if (fragment == null) {
-                        fragment = ActionFragment.newInstance("main", "");
-                        getFragmentManager().beginTransaction().replace(R.id.container, fragment, ActionFragment.TAG).addToBackStack(MainActivity.currentFragmentId).commit();
-                    } else {
-                        getFragmentManager().beginTransaction().replace(R.id.container, fragment, ActionFragment.TAG).commit();
-                    }
-                    MainActivity.currentFragmentId = "Action";
-
-                } else {
-                    // Log.d(TAG, "bad");
-                }
-            }
-            // Log.d(TAG, "Logged In?:" + MainActivity.LOGGED_IN);
-            if (!MainActivity.LOGGED_IN){
-                Toast.makeText(getView().getContext(), getString(R.string.error_invalid_login), Toast.LENGTH_SHORT).show();
-            } else { // auto sync
-//                Toast.makeText(getView().getContext(), getString(R.string.sync_reminder), Toast.LENGTH_SHORT).show();
-// uncomment to show sync on login, gnr
-//                if(MainActivity._pass.equals("")) {
-//
-//                    AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
-//                    builder.setTitle("Sync Password");
-//
-//                    final EditText input = new EditText(getActivity());
-//                     Specify the type of input expected; this, for example, sets the input as a password, and will mask the text
-//                    input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
-//                    builder.setView(input);
-//
-//                     Set up the buttons
-//                    builder.setPositiveButton("OK", new DialogInterface.OnClickListener() {
-//                        @Override
-//                        public void onClick(DialogInterface dialog, int which) {
-//                            MainActivity._pass = input.getText().toString();
-//                            Log.d(LOG, "_pass: " + MainActivity._pass);
-//                            DBHelper dbHelp = new DBHelper(getActivity());
-//                            dbHelp.doSyncDB();
-//                        }
-//                    });
-//                    builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
-//                        @Override
-//                        public void onClick(DialogInterface dialog, int which) {
-//                            dialog.cancel();
-//                        }
-//                    });
-//
-//                    builder.show();
-//                }
-            }
         }
     }
 
@@ -432,31 +366,95 @@ public class LoginFragment extends Fragment {
 
         @Override
         protected Boolean doInBackground(Void... params) {
-            // TODO: attempt authentication against a network service.
+            Log.d(LOG, "check credentials0");
+            DBHelper dbHelp = new DBHelper(getActivity());
+            String credentials = dbHelp.getUserCredentials(mEmail);
 
-            try {
-                // Simulate network access.
-                Thread.sleep(20);
-            } catch (InterruptedException e) {
-                return false;
+            PasswordUtil passwordUtil = new PasswordUtil();
+            if (credentials.equals("")) {
+                String passwordHash = passwordUtil.secureHashPassword("password");
+                credentials = "sync@:" + passwordHash;
             }
 
-            Log.d(LOG, "check credentials1");
-            ArrayList<String> _CREDENTIALS = new ArrayList<String>();
-            // fill with getCredentials
+            String[] pieces = credentials.split(":");
+            boolean loginSuccess = false;
+            try {
+                loginSuccess = pieces[0].equals(mEmail) && passwordUtil.verifyPassword(mPassword, pieces[1]);
+            } catch (Exception e) {
+                Log.d(LOG, "ERROR while checking password hash " + e.toString());
+                Log.d(LOG, "attempting unencrypted check");
+                loginSuccess = pieces[0].equals(mEmail) && pieces[1].equals(mPassword);
+                if (loginSuccess) {
+                    User user = new User(dbHelp, mEmail + ":" + mPassword);
+                    pieces[1] = passwordUtil.secureHashPassword(mPassword);
+                    Log.d(LOG, "password at loginFragment " + pieces[1]);
+                    user.set_password(pieces[1]);
+                    dbHelp.updateUser(user);
+                }
+            } finally {
+                if (loginSuccess) {
+                    Log.d(LOG, "password check success");
+                    MainActivity.LOGGED_IN = true;
+                    MainActivity._username = mEmail; // referred to as username in db, email in pop-up
+                    MainActivity._password = pieces[1];
 
-            for (String credential : _CREDENTIALS) {
-                String[] pieces = credential.split(":");
-                if (pieces[0].equals(mEmail)) {
-                    // Account exists, return true if the password matches.
-                    Log.d(LOG, "return: " + pieces[1].equals(mPassword));
-                    return pieces[1].equals(mPassword);
+                    if (!MainActivity._username.equals("sync@")) {
+                        MainActivity.USER_OBJ = new User(dbHelp, MainActivity._username + ":" + MainActivity._password);
+                    }
+                    return true;
                 }
             }
-
-            // TODO: register the new account here.
-            Log.d(LOG, "return: false");
+            // Log.d(TAG, "bad");
             return false;
+        }
+
+        @Override
+        protected void onPostExecute(Boolean result) {
+            // Log.d(TAG, "Logged In?:" + MainActivity.LOGGED_IN);
+            if (!MainActivity.LOGGED_IN){
+                Toast.makeText(getActivity(), getActivity().getString(R.string.error_invalid_login), Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(getActivity(), getActivity().getString(R.string.valid_login), Toast.LENGTH_SHORT).show();
+                Fragment fragment = getActivity().getFragmentManager().findFragmentByTag(ActionFragment.TAG);
+                if (fragment == null) {
+                    fragment = ActionFragment.newInstance("main", "");
+                    getActivity().getFragmentManager().beginTransaction().replace(R.id.container, fragment, ActionFragment.TAG).addToBackStack(MainActivity.currentFragmentId).commit();
+                } else {
+                    getActivity().getFragmentManager().beginTransaction().replace(R.id.container, fragment, ActionFragment.TAG).commit();
+                }
+                MainActivity.currentFragmentId = "Action";// auto sync
+//                Toast.makeText(getView().getContext(), getString(R.string.sync_reminder), Toast.LENGTH_SHORT).show();
+// uncomment to show sync on login, gnr
+//                if(MainActivity._pass.equals("")) {
+//
+//                    AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
+//                    builder.setTitle("Sync Password");
+//
+//                    final EditText input = new EditText(getActivity());
+//                     Specify the type of input expected; this, for example, sets the input as a password, and will mask the text
+//                    input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+//                    builder.setView(input);
+//
+//                     Set up the buttons
+//                    builder.setPositiveButton("OK", new DialogInterface.OnClickListener() {
+//                        @Override
+//                        public void onClick(DialogInterface dialog, int which) {
+//                            MainActivity._pass = input.getText().toString();
+//                            Log.d(LOG, "_pass: " + MainActivity._pass);
+//                            DBHelper dbHelp = new DBHelper(getActivity());
+//                            dbHelp.doSyncDB();
+//                        }
+//                    });
+//                    builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+//                        @Override
+//                        public void onClick(DialogInterface dialog, int which) {
+//                            dialog.cancel();
+//                        }
+//                    });
+//
+//                    builder.show();
+//                }
+            }
         }
     }
 }
